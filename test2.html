@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Parametric House Generator</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --ui-width:360px; --bg:#f7f7f7; --accent:#2b6cb0; }
+    html,body { height:100%; margin:0; font-family:Inter,Arial,Helvetica,sans-serif; }
+    body { display:flex; background:#efefef; }
+    #ui { width:var(--ui-width); padding:18px; box-sizing:border-box; background:var(--bg); border-right:1px solid #e0e0e0; overflow:auto; }
+    #canvas-wrap { flex:1; position:relative; min-height:100vh; display:flex; align-items:stretch; }
+    canvas { width:100%; height:100%; display:block; }
+    h2 { margin:0 0 12px 0; font-size:18px; color:#111; }
+    label{font-weight:600; display:block; margin-top:10px; font-size:13px;}
+    input[type=text], textarea { width:100%; padding:8px; box-sizing:border-box; border:1px solid #d0d0d0; border-radius:4px; margin-top:6px; }
+    input[type=file] { margin-top:8px; }
+    button { margin-top:12px; padding:10px 12px; background:var(--accent); color:#fff; border:0; border-radius:6px; cursor:pointer; }
+    button[disabled] { opacity:0.6; cursor:not-allowed; }
+    #status { margin-top:10px; color:#333; font-size:13px; min-height:20px; }
+    footer { margin-top:18px; font-size:12px; color:#666; }
+    @media (max-width:900px){ #ui{ width:320px } }
+  </style>
+</head>
+<body>
+  <div id="ui" aria-label="Controls">
+    <h2>House Generator</h2>
+    <label>Prompt</label>
+    <input id="prompt" type="text" placeholder="modern two storey house with balcony, red roof" />
+    <label>Optional facade image (jpg/png)</label>
+    <input id="imgfile" type="file" accept="image/*" />
+    <label>Options</label>
+    <div style="margin-top:6px;">
+      <input id="exportGLB" type="checkbox" checked /> <span style="font-weight:400">Enable GLB download</span>
+    </div>
+    <button id="generate">Generate Model</button>
+    <button id="download" disabled>Download GLB</button>
+    <div id="status">Ready</div>
+    <footer>Host on GitHub Pages and embed via iframe in systeme.io</footer>
+  </div>
+
+  <div id="canvas-wrap" role="main">
+    <canvas id="viewer" aria-label="3D viewer"></canvas>
+  </div>
+
+  <script type="module">
+  // Minimal robust three.js parametric house generator
+  import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+  import { OrbitControls } from 'https://unpkg.com/three@0.158.0/examples/jsm/controls/OrbitControls.js';
+  import { GLTFExporter } from 'https://unpkg.com/three@0.158.0/examples/jsm/exporters/GLTFExporter.js';
+
+  // Basic global error suppression for unhandled promise rejections
+  window.addEventListener('unhandledrejection', event => {
+    // Log minimal info and prevent noisy default console error
+    console.warn('Unhandled promise rejection suppressed:', event.reason && event.reason.message ? event.reason.message : event.reason);
+    event.preventDefault();
+  });
+
+  // Scene setup
+  const canvas = document.getElementById('viewer');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, preserveDrawingBuffer:true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xececec);
+  const camera = new THREE.PerspectiveCamera(45, 2, 0.1, 1000);
+  camera.position.set(4,3,6);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0,1,0);
+  controls.update();
+
+  // Lights and ground
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9); hemi.position.set(0,50,0); scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(5,10,7); scene.add(dir);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(50,50), new THREE.MeshStandardMaterial({color:0x9dbb9b}));
+  ground.rotation.x = -Math.PI/2; ground.position.y = 0; scene.add(ground);
+
+  // House container
+  let houseGroup = new THREE.Group();
+  scene.add(houseGroup);
+
+  function resizeRendererToDisplaySize() {
+    const width = canvas.clientWidth || canvas.parentElement.clientWidth;
+    const height = canvas.clientHeight || canvas.parentElement.clientHeight;
+    if (canvas.width !== Math.floor(width * devicePixelRatio) || canvas.height !== Math.floor(height * devicePixelRatio)) {
+      renderer.setSize(width, height, false);
+      camera.aspect = width/height;
+      camera.updateProjectionMatrix();
+    }
+  }
+  function animate() { resizeRendererToDisplaySize(); renderer.render(scene, camera); requestAnimationFrame(animate); }
+  requestAnimationFrame(animate);
+
+  // Prompt parser
+  function parsePrompt(prompt) {
+    const p = (prompt || '').toLowerCase();
+    const cfg = {
+      stories: (p.match(/\b(two|2|two[- ]storey|two[- ]story)\b/) ? 2 : 1),
+      style: p.includes('modern') ? 'modern' : (p.includes('traditional') ? 'traditional' : 'generic'),
+      roof: p.includes('flat') ? 'flat' : (p.includes('hip') ? 'hip' : 'gable'),
+      balcony: /\b(balcony|veranda|porch)\b/.test(p),
+      windows: (/\b(large windows|big windows|panes)\b/.test(p) ? 'large' : 'normal'),
+      colorHint: null
+    };
+    const colors = ['red','blue','green','white','black','gray','grey','brown','beige','yellow','orange'];
+    for (const c of colors) if (p.includes(c)) { cfg.colorHint = c; break; }
+    return cfg;
+  }
+
+  // Build parametric house
+  function buildHouse(cfg, facadeTexture=null) {
+    houseGroup.clear();
+    const scale = 1.6;
+    const width = 2.4 * scale;
+    const depth = 1.6 * scale;
+    const storyHeight = 1.2 * scale;
+    const totalHeight = cfg.stories * storyHeight;
+    const wallColor = cfg.colorHint ? cfg.colorHint : '#f2efe6';
+    const wallMat = new THREE.MeshStandardMaterial({ color: wallColor, map: facadeTexture });
+
+    for (let s=0; s<cfg.stories; s++) {
+      const y = (s + 0.5) * storyHeight;
+      const boxGeo = new THREE.BoxGeometry(width, storyHeight, depth);
+      const box = new THREE.Mesh(boxGeo, wallMat);
+      box.position.set(0, y, 0);
+      houseGroup.add(box);
+    }
+
+    if (cfg.roof === 'flat') {
+      const roofMat = new THREE.MeshStandardMaterial({ color: '#8b3a3a' });
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(width+0.1, 0.15*scale, depth+0.1), roofMat);
+      roof.position.set(0, totalHeight + 0.075*scale, 0);
+      houseGroup.add(roof);
+    } else {
+      const roofMat = new THREE.MeshStandardMaterial({ color: '#8b3a3a' });
+      const left = new THREE.Mesh(new THREE.BoxGeometry(width, 0.2*scale, depth/2+0.02), roofMat);
+      left.position.set(0, totalHeight + 0.4*scale, -depth/4);
+      left.rotation.x = 0.2;
+      const right = new THREE.Mesh(new THREE.BoxGeometry(width, 0.2*scale, depth/2+0.02), roofMat);
+      right.position.set(0, totalHeight + 0.4*scale, depth/4);
+      right.rotation.x = -0.2;
+      houseGroup.add(left, right);
+    }
+
+    if (cfg.balcony) {
+      const balDepth = 0.4 * scale;
+      const bal = new THREE.Mesh(new THREE.BoxGeometry(width*0.6, 0.08*scale, balDepth), new THREE.MeshStandardMaterial({color:'#666'}));
+      bal.position.set(0, storyHeight*0.9, depth/2 + balDepth/2 - 0.02);
+      houseGroup.add(bal);
+      const railGeo = new THREE.BoxGeometry(width*0.6, 0.02*scale, 0.02);
+      const rail = new THREE.Mesh(railGeo, new THREE.MeshStandardMaterial({color:'#333'}));
+      rail.position.set(0, storyHeight*0.95, depth/2 + balDepth - 0.02);
+      houseGroup.add(rail);
+    }
+
+    const winMat = new THREE.MeshStandardMaterial({ color: '#aee', metalness:0.1, roughness:0.2 });
+    const winW = cfg.windows === 'large' ? 0.6*scale : 0.35*scale;
+    const winH = cfg.windows === 'large' ? 0.6*scale : 0.35*scale;
+    const win1 = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), winMat);
+    win1.position.set(-width*0.25, storyHeight*0.6, depth/2 + 0.01);
+    houseGroup.add(win1);
+    const win2 = win1.clone(); win2.position.set(width*0.25, storyHeight*0.6, depth/2 + 0.01); houseGroup.add(win2);
+
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.4*scale, 0.8*scale, 0.05), new THREE.MeshStandardMaterial({color:'#5a3b2e'}));
+    door.position.set(0, 0.4*scale, depth/2 + 0.03);
+    houseGroup.add(door);
+
+    houseGroup.position.set(0, 0, 0);
+  }
+
+  // Load image file into a CanvasTexture
+  function loadImageAsTexture(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) return resolve(null);
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const tex = new THREE.CanvasTexture(img);
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(1, 1);
+          resolve(tex);
+        };
+        img.onerror = () => reject(new Error('Image load failed'));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error('File read failed'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // GLB export helper
+  const exporter = new GLTFExporter();
+  function exportGLB(sceneOrGroup) {
+    return new Promise((resolve, reject) => {
+      exporter.parse(sceneOrGroup, (result) => {
+        if (result instanceof ArrayBuffer) {
+          resolve(new Blob([result], {type:'model/gltf-binary'}));
+        } else {
+          try {
+            const json = JSON.stringify(result);
+            resolve(new Blob([json], {type:'model/gltf+json'}));
+          } catch (e) { reject(e); }
+        }
+      }, {binary:true});
+    });
+  }
+
+  // UI wiring
+  const generateBtn = document.getElementById('generate');
+  const downloadBtn = document.getElementById('download');
+  const statusEl = document.getElementById('status');
+
+  generateBtn.addEventListener('click', async () => {
+    const prompt = document.getElementById('prompt').value || '';
+    const file = document.getElementById('imgfile').files[0] || null;
+    statusEl.innerText = 'Generating...';
+    try {
+      const cfg = parsePrompt(prompt);
+      const tex = await loadImageAsTexture(file);
+      buildHouse(cfg, tex);
+      statusEl.innerText = 'Model ready';
+      downloadBtn.disabled = false;
+    } catch (err) {
+      console.error(err);
+      statusEl.innerText = 'Error: ' + (err.message || err);
+    }
+  });
+
+  downloadBtn.addEventListener('click', async () => {
+    const enabled = document.getElementById('exportGLB').checked;
+    if (!enabled) { alert('GLB export disabled'); return; }
+    statusEl.innerText = 'Exporting GLB...';
+    try {
+      const blob = await exportGLB(houseGroup);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'house_model.glb'; document.body.appendChild(a);
+      a.click(); a.remove(); URL.revokeObjectURL(url);
+      statusEl.innerText = 'Download ready';
+    } catch (err) {
+      console.error(err);
+      statusEl.innerText = 'Export failed: ' + (err.message || err);
+    }
+  });
+
+  // initial demo content
+  document.getElementById('prompt').value = 'modern two storey house with balcony, red roof';
+  </script>
+</body>
+</html>
