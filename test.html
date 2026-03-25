@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Viewer Script Test</title>
+</head>
+<body>
+  <h2>Viewer Script Test</h2>
+  <div id="viewer" style="width:400px;height:200px;background:#222;color:#fff;padding:10px;">
+    viewer element present
+  </div>
+  <pre id="log">log:</pre>
+
+  <!-- Minimal script to test execution and CDN loading -->
+  <script>
+    document.getElementById('log').textContent += '\\nInline script executed';
+    console.log('Inline script executed');
+  </script>
+
+  <!-- Test loading three.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script>
+    console.log('THREE defined:', typeof THREE !== 'undefined');
+    document.getElementById('log').textContent += '\\nTHREE defined: ' + (typeof THREE !== 'undefined');
+  </script>
+</body>
+</html>
