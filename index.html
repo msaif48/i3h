@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Image/Text → 3D House — Viewer</title>
+  <style>
+    body { margin:0; font-family:system-ui,Segoe UI,Roboto,Arial; display:flex; flex-direction:column; height:100vh; background:#f3f4f6; }
+    header { padding:12px 16px; background:#0b5; color:#003; font-weight:700; }
+    main { display:flex; gap:12px; padding:12px; flex:1; box-sizing:border-box; }
+    .left { width:360px; max-width:40%; display:flex; flex-direction:column; gap:12px; }
+    .panel { background:#fff; border:1px solid #e6e6e6; padding:12px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+    .drop { height:180px; border:2px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; text-align:center; padding:12px; cursor:pointer; background:#fafafa; }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; }
+    button { padding:8px 10px; border-radius:6px; border:1px solid #0a6; background:#0c8; color:#003; cursor:pointer; font-weight:600; }
+    button.secondary { background:#eee; color:#333; border-color:#ccc; }
+    #viewer { flex:1; min-width:0; border-radius:8px; overflow:hidden; background:#111; }
+    footer { padding:8px 12px; font-size:13px; color:#444; background:#fafafa; border-top:1px solid #eee; }
+    .hint { font-size:13px; color:#555; }
+    input[type="file"] { display:none; }
+    label.filebtn { display:inline-block; padding:8px 10px; border-radius:6px; background:#0c8; color:#003; cursor:pointer; font-weight:600; border:1px solid #0a6; }
+    .small { font-size:13px; color:#666; }
+    .log { height:120px; overflow:auto; background:#f7f7f7; border-radius:6px; padding:8px; font-family:monospace; font-size:12px; color:#222; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <header>Image / Text → 3D House — Viewer</header>
+
+  <main>
+    <div class="left">
+      <div class="panel">
+        <div style="font-weight:700; margin-bottom:8px;">Upload or drop a 3D model (GLB GLTF ZIP)</div>
+        <div id="drop" class="drop">Drop a .glb .gltf or .zip here<br><span class="small">or use the file picker below</span></div>
+        <div style="margin-top:8px;">
+          <label class="filebtn" for="fileInput">Choose file</label>
+          <input id="fileInput" type="file" accept=".glb,.gltf,.zip" />
+          <button id="resetBtn" class="secondary">Reset Viewer</button>
+        </div>
+        <div style="margin-top:10px;" class="hint">
+          Upload a single .glb or a .zip containing a .gltf/.bin and textures. Prefer .glb for single-file uploads.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="font-weight:700; margin-bottom:6px;">Quick workflow</div>
+        <ol style="padding-left:18px; margin:0;">
+          <li class="small">Generate or obtain a .glb model.</li>
+          <li class="small">Upload it here to preview and test.</li>
+          <li class="small">Embed this page into Systeme.io via iframe.</li>
+        </ol>
+      </div>
+
+      <div class="panel">
+        <div style="font-weight:700; margin-bottom:6px;">Console status</div>
+        <div id="log" class="log">Ready.</div>
+      </div>
+    </div>
+
+    <div id="viewer" class="panel" style="flex:1;"></div>
+  </main>
+
+  <footer>
+    Host this file on GitHub Pages or Netlify and embed via iframe in Systeme.io.
+  </footer>
+
+  <!-- Required libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <script>
+  (function(){
+    const viewer = document.getElementById('viewer');
+    const logEl = document.getElementById('log');
+    const drop = document.getElementById('drop');
+    const fileInput = document.getElementById('fileInput');
+    const resetBtn = document.getElementById('resetBtn');
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      console.log('[viewer] ' + msg);
+      if (logEl) {
+        logEl.textContent += '\\n[' + time + '] ' + msg;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+    viewer.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    const camera = new THREE.PerspectiveCamera(45, viewer.clientWidth / viewer.clientHeight, 0.01, 2000);
+    camera.position.set(3, 2, 4);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1, 0);
+    controls.update();
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+    hemi.position.set(0, 20, 0);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(5, 10, 7);
+    scene.add(dir);
+
+    const grid = new THREE.GridHelper(20, 40, 0x222222, 0x222222);
+    grid.material.opacity = 0.25;
+    grid.material.transparent = true;
+    scene.add(grid);
+
+    let resourceMap = null;
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((url) => {
+      if (!resourceMap) return url;
+      const key = url.replace(/^\\.\\//, '');
+      if (resourceMap[key]) return resourceMap[key];
+      try { const dec = decodeURIComponent(url); if (resourceMap[dec]) return resourceMap[dec]; } catch(e){}
+      return url;
+    });
+
+    const loader = new THREE.GLTFLoader(manager);
+    let currentModel = null;
+    const createdBlobURLs = [];
+
+    function revokeAllBlobURLs() {
+      for (const u of createdBlobURLs) {
+        try { URL.revokeObjectURL(u); } catch(e){}
+      }
+      createdBlobURLs.length = 0;
+    }
+
+    function disposeModel() {
+      if (!currentModel) return;
+      scene.remove(currentModel);
+      currentModel.traverse((node) => {
+        if (node.geometry) node.geometry.dispose();
+        if (node.material) {
+          if (Array.isArray(node.material)) {
+            node.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+          } else {
+            if (node.material.map) node.material.map.dispose();
+            node.material.dispose();
+          }
+        }
+      });
+      currentModel = null;
+    }
+
+    function fitCameraToObject(camera, object, offset = 1.25) {
+      const box = new THREE.Box3().setFromObject(object);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const maxSize = Math.max(size.x, size.y, size.z);
+      if (maxSize === 0) {
+        camera.position.set(center.x + 3, center.y + 2, center.z + 3);
+        controls.target.copy(center);
+        controls.update();
+        return;
+      }
+      const fov = camera.fov * (Math.PI / 180);
+      let distance = Math.abs(maxSize / Math.sin(fov / 2));
+      distance = distance * offset;
+      camera.position.copy(center).add(new THREE.Vector3(distance, distance * 0.6, distance));
+      camera.near = Math.max(0.01, maxSize / 1000);
+      camera.far = Math.max(1000, maxSize * 100);
+      camera.updateProjectionMatrix();
+      controls.target.copy(center);
+      controls.update();
+    }
+
+    function loadGLBFromArrayBuffer(arrayBuffer, name = 'model.glb') {
+      log('Parsing GLB ' + name + ' ...');
+      try {
+        loader.parse(arrayBuffer, '', (gltf) => {
+          if (!gltf || !gltf.scene) { log('GLB parsed but no scene found.'); return; }
+          disposeModel();
+          currentModel = gltf.scene;
+          scene.add(currentModel);
+          log('Model loaded: ' + name);
+          fitCameraToObject(camera, currentModel, 1.4);
+        }, (err) => {
+          log('GLB parse error: ' + (err && err.message ? err.message : err));
+          console.error(err);
+        });
+      } catch (e) {
+        log('Exception while parsing GLB: ' + e.message);
+        console.error(e);
+      }
+    }
+
+    function loadGLTFFromURL(url, name = 'model.gltf') {
+      log('Loading GLTF ' + name + ' ...');
+      loader.load(url, (gltf) => {
+        if (!gltf || !gltf.scene) { log('GLTF loaded but no scene found.'); return; }
+        disposeModel();
+        currentModel = gltf.scene;
+        scene.add(currentModel);
+        log('Model loaded: ' + name);
+        fitCameraToObject(camera, currentModel, 1.4);
+      }, (xhr) => {
+        if (xhr && xhr.loaded && xhr.total) {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          log('Loading progress: ' + pct + '%');
+        }
+      }, (err) => {
+        log('GLTF load error: ' + (err && err.message ? err.message : err));
+        console.error(err);
+      });
+    }
+
+    async function handleZipFile(file) {
+      log('Reading ZIP file...');
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        resourceMap = {};
+        revokeAllBlobURLs();
+        const fileNames = Object.keys(zip.files);
+        let primary = null;
+        for (const fname of fileNames) {
+          const lower = fname.toLowerCase();
+          if (lower.endsWith('.glb') || lower.endsWith('.gltf')) { primary = fname; break; }
+        }
+        if (!primary) { log('No .glb or .gltf found inside ZIP.'); return; }
+        const createPromises = fileNames.map(async (fname) => {
+          const entry = zip.files[fname];
+          if (entry.dir) return;
+          const content = await entry.async('uint8array');
+          const blob = new Blob([content], { type: guessMimeType(fname) });
+          const url = URL.createObjectURL(blob);
+          createdBlobURLs.push(url);
+          const key = fname.replace(/^\\.\\//, '');
+          resourceMap[key] = url;
+        });
+        await Promise.all(createPromises);
+        log('ZIP unpacked. Primary model: ' + primary);
+        const primaryURL = resourceMap[primary.replace(/^\\.\\//, '')];
+        if (!primaryURL) { log('Primary URL not found after unpacking.'); return; }
+        if (primary.toLowerCase().endsWith('.glb')) {
+          const resp = await fetch(primaryURL);
+          const ab = await resp.arrayBuffer();
+          loadGLBFromArrayBuffer(ab, primary);
+        } else {
+          loadGLTFFromURL(primaryURL, primary);
+        }
+      } catch (e) {
+        log('Error processing ZIP: ' + e.message);
+        console.error(e);
+      }
+    }
+
+    function guessMimeType(name) {
+      const n = name.toLowerCase();
+      if (n.endsWith('.png')) return 'image/png';
+      if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
+      if (n.endsWith('.bin')) return 'application/octet-stream';
+      if (n.endsWith('.glb')) return 'model/gltf-binary';
+      if (n.endsWith('.gltf')) return 'model/gltf+json';
+      if (n.endsWith('.ktx2')) return 'image/ktx2';
+      return 'application/octet-stream';
+    }
+
+    function handleFile(file) {
+      if (!file) return;
+      const name = file.name || 'file';
+      const lower = name.toLowerCase();
+      log('File selected: ' + name + ' (' + Math.round(file.size/1024) + ' KB)');
+      resourceMap = null;
+      revokeAllBlobURLs();
+
+      if (lower.endsWith('.glb')) {
+        file.arrayBuffer().then((ab) => loadGLBFromArrayBuffer(ab, name)).catch(e => { log('Error reading GLB: ' + e.message); console.error(e); });
+        return;
+      }
+      if (lower.endsWith('.gltf')) {
+        try {
+          const url = URL.createObjectURL(file);
+          createdBlobURLs.push(url);
+          loadGLTFFromURL(url, name);
+        } catch (e) { log('Error creating URL for GLTF: ' + e.message); console.error(e); }
+        return;
+      }
+      if (lower.endsWith('.zip')) {
+        handleZipFile(file);
+        return;
+      }
+      log('Unsupported file type. Use .glb .gltf or .zip.');
+    }
+
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.style.borderColor = '#0a6'; });
+    drop.addEventListener('dragleave', (e) => { e.preventDefault(); drop.style.borderColor = '#bbb'; });
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.style.borderColor = '#bbb'; const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (!f) { log('No file detected in drop.'); return; } handleFile(f); });
+
+    fileInput.addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; handleFile(f); fileInput.value = ''; });
+
+    resetBtn.addEventListener('click', () => { disposeModel(); resourceMap = null; revokeAllBlobURLs(); log('Viewer reset.'); });
+
+    window.addEventListener('resize', () => { renderer.setSize(viewer.clientWidth, viewer.clientHeight); camera.aspect = viewer.clientWidth / viewer.clientHeight; camera.updateProjectionMatrix(); });
+
+    function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+    animate();
+
+    log('Viewer ready. Drag & drop a .glb/.gltf/.zip or use Choose file.');
+  })();
+  </script>
+</body>
+</html>
