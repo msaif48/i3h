@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enhanced 2D Floor Plan Generator</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 20px;
+      padding: 20px;
+      min-height: 100vh;
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+    .panel, .viewer, .meta {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+      border: 1px solid #e5e7eb;
+    }
+    .panel {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .viewer {
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      min-height: 500px;
+    }
+    .meta { padding: 20px; }
+    .right {
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 20px;
+    }
+    h1 { margin: 0; font-size: 22px; font-weight: 700; color: #1f2937; }
+    h2 { margin: 0 0 12px 0; font-size: 18px; color: #374151; }
+    p { margin: 0; color: #4b5563; line-height: 1.5; font-size: 14px; }
+    
+    /* Custom Scrollbar for a cleaner look */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    textarea {
+      width: 100%;
+      min-height: 400px;
+      flex-grow: 1;
+      resize: vertical;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      background: #fafafa;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    textarea:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+      background: #fff;
+    }
+    .buttons { display: flex; flex-wrap: wrap; gap: 12px; }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    button:hover { transform: translateY(-1px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    button:active { transform: translateY(0); box-shadow: none; }
+    .primary { background: #2563eb; color: #fff; }
+    .primary:hover { background: #1d4ed8; }
+    .secondary { background: #1f2937; color: #fff; }
+    .secondary:hover { background: #111827; }
+    .ghost { background: #e5e7eb; color: #374151; }
+    .ghost:hover { background: #d1d5db; }
+    
+    .canvas-container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+    canvas {
+      background: #fff;
+      border-radius: 8px;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    pre {
+      background: #111827;
+      color: #a7f3d0;
+      padding: 16px;
+      border-radius: 10px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      font-size: 13px;
+      max-height: 250px;
+    }
+    .help { font-size: 13px; color: #6b7280; line-height: 1.65; background: #f9fafb; padding: 12px; border-radius: 8px; }
+    .status-box {
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.55;
+      transition: all 0.3s ease;
+    }
+    .warning-box { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; }
+    .ok-box { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+    code { background: #e5e7eb; color: #1f2937; padding: 2px 6px; border-radius: 4px; font-size: 12px;}
+    
+    @media (max-width: 1050px) {
+      .app { grid-template-columns: 1fr; }
+      .viewer { min-height: 400px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="panel">
+      <h1>2D Floor Plan Generator</h1>
+      <p>Rooms connect seamlessly using aligned coordinates. The canvas updates automatically as you type.</p>
+
+      <textarea id="inputText" spellcheck="false">plan width: 1000
+plan height: 700
+wall thickness: 8
+show grid: yes
+grid size: 20
+background color: #ffffff
+outline color: #1f2937
+label color: #111827
+
+room: Living Room, 60, 60, 320, 220, #efe3b8
+room: Kitchen, 380, 60, 220, 220, #c4dfcd
+room: Corridor, 600, 60, 160, 220, #dddddf
+
+room: Bedroom 1, 60, 280, 240, 180, #c6d4e8
+room: Bedroom 2, 300, 280, 300, 180, #e3d1dc
+room: Bathroom, 600, 280, 160, 180, #ccdbe6
+
+door: Living Room, bottom, 120, 80
+door: Kitchen, left, 60, 70
+door: Bedroom 1, top, 70, 75
+door: Bedroom 2, top, 110, 75
+door: Bathroom, top, 45, 65
+
+window: Living Room, top, 100, 100
+window: Kitchen, top, 80, 90
+window: Corridor, top, 45, 90
+window: Bedroom 1, left, 50, 85
+window: Bedroom 2, right, 55, 85
+window: Bathroom, right, 50, 70</textarea>
+
+      <div class="buttons">
+        <button class="primary" id="renderBtn">Force Render</button>
+        <button class="secondary" id="downloadBtn">Download PNG</button>
+        <button class="ghost" id="resetBtn">Reset Default</button>
+      </div>
+
+      <div class="help">
+        <b>Syntax Quick Reference:</b><br>
+        <code>room: Name, x, y, width, height, color</code><br>
+        <code>door: Room Name, side, offset, size</code><br>
+        <code>window: Room Name, side, offset, size</code>
+      </div>
+
+      <div id="validationBox" class="status-box ok-box">Layout looks good.</div>
+    </div>
+
+    <div class="right">
+      <div class="viewer">
+        <div class="canvas-container" id="canvasContainer">
+          <canvas id="planCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="meta">
+        <h2>Parsed JSON Model</h2>
+        <pre id="parsedOutput">{}</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("planCanvas");
+    const ctx = canvas.getContext("2d");
+    const inputText = document.getElementById("inputText");
+    const parsedOutput = document.getElementById("parsedOutput");
+    const validationBox = document.getElementById("validationBox");
+    const canvasContainer = document.getElementById("canvasContainer");
+
+    const defaultModel = {
+      planWidth: 1000, planHeight: 700, wallThickness: 8,
+      showGrid: true, gridSize: 20,
+      backgroundColor: "#ffffff", outlineColor: "#1f2937", labelColor: "#111827",
+      rooms: [], doors: [], windows: []
+    };
+
+    // Utilities
+    const clone = obj => JSON.parse(JSON.stringify(obj));
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const toNumber = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
+    const splitCSV = text => text.split(",").map(s => s.trim());
+    
+    function parseYesNo(v, fallback) {
+      if (typeof v !== "string") return fallback;
+      const s = v.trim().toLowerCase();
+      if (["yes", "true", "1", "on"].includes(s)) return true;
+      if (["no", "false", "0", "off"].includes(s)) return false;
+      return fallback;
+    }
+
+    function normalizeSide(side) {
+      const s = String(side || "").trim().toLowerCase();
+      return ["top", "bottom", "left", "right"].includes(s) ? s : "top";
+    }
+
+    // High DPI Canvas Setup
+    function setupCanvas(logicalWidth, logicalHeight) {
+      const dpr = window.devicePixelRatio || 1;
+      
+      // We want to fit the logic size inside our container without stretching
+      const containerRect = canvasContainer.getBoundingClientRect();
+      const containerRatio = containerRect.width / containerRect.height;
+      const logicRatio = logicalWidth / logicalHeight;
+      
+      let cssWidth, cssHeight;
+      if (logicRatio > containerRatio) {
+        cssWidth = containerRect.width;
+        cssHeight = containerRect.width / logicRatio;
+      } else {
+        cssHeight = containerRect.height;
+        cssWidth = containerRect.height * logicRatio;
+      }
+
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+      canvas.width = cssWidth * dpr;
+      canvas.height = cssHeight * dpr;
+      
+      ctx.scale(dpr, dpr);
+      
+      return { width: cssWidth, height: cssHeight };
+    }
+
+    // Parser
+    function parseLayout(text) {
+      const model = clone(defaultModel);
+      const lines = text.split("\n").map(line => line.trim()).filter(line => line.length > 0);
+
+      for (const line of lines) {
+        const lower = line.toLowerCase();
+        const parts = line.split(":");
+        const key = parts[0].trim().toLowerCase();
+        const valStr = parts.slice(1).join(":").trim();
+
+        if (key === "plan width") model.planWidth = clamp(toNumber(valStr, 1000), 300, 5000);
+        else if (key === "plan height") model.planHeight = clamp(toNumber(valStr, 700), 300, 5000);
+        else if (key === "wall thickness") model.wallThickness = clamp(toNumber(valStr, 8), 1, 40);
+        else if (key === "show grid") model.showGrid = parseYesNo(valStr, true);
+        else if (key === "grid size") model.gridSize = clamp(toNumber(valStr, 20), 5, 200);
+        else if (key === "background color") model.backgroundColor = valStr || "#ffffff";
+        else if (key === "outline color") model.outlineColor = valStr || "#1f2937";
+        else if (key === "label color") model.labelColor = valStr || "#111827";
+        else if (key === "room") {
+          const p = splitCSV(valStr);
+          if (p.length >= 5) {
+            model.rooms.push({
+              name: p[0], x: toNumber(p[1], 0), y: toNumber(p[2], 0),
+              width: clamp(toNumber(p[3], 100), 20, 3000),
+              height: clamp(toNumber(p[4], 100), 20, 3000),
+              color: p[5] || "#f3f4f6"
+            });
+          }
+        }
+        else if (key === "door" || key === "window") {
+          const p = splitCSV(valStr);
+          if (p.length >= 4) {
+            const feature = {
+              room: p[0], side: normalizeSide(p[1]),
+              offset: clamp(toNumber(p[2], 0), 0, 10000),
+              size: clamp(toNumber(p[3], 70), 10, 500)
+            };
+            key === "door" ? model.doors.push(feature) : model.windows.push(feature);
+          }
+        }
+      }
+      return model;
+    }
+
+    // Geometry Helpers
+    const findRoom = (model, name) => model.rooms.find(r => r.name.toLowerCase() === name.toLowerCase()) || null;
+    
+    function fitTransform(planW, planH, canvasW, canvasH, padding) {
+      const sx = (canvasW - padding * 2) / planW;
+      const sy = (canvasH - padding * 2) / planH;
+      const scale = Math.min(sx, sy);
+      return { scale, offsetX: (canvasW - planW * scale) / 2, offsetY: (canvasH - planH * scale) / 2 };
+    }
+
+    const mapPoint = (x, y, t) => ({ x: t.offsetX + x * t.scale, y: t.offsetY + y * t.scale });
+
+    // Rendering functions
+    function drawGrid(model, t) {
+      if (!model.showGrid) return;
+      ctx.save();
+      ctx.strokeStyle = "#e5e7eb";
+      ctx.lineWidth = 1;
+
+      for (let x = 0; x <= model.planWidth; x += model.gridSize) {
+        const p1 = mapPoint(x, 0, t), p2 = mapPoint(x, model.planHeight, t);
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+      }
+      for (let y = 0; y <= model.planHeight; y += model.gridSize) {
+        const p1 = mapPoint(0, y, t), p2 = mapPoint(model.planWidth, y, t);
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawRoom(room, model, t) {
+      const p = mapPoint(room.x, room.y, t);
+      const w = room.width * t.scale, h = room.height * t.scale;
+
+      ctx.save();
+      ctx.fillStyle = room.color;
+      ctx.strokeStyle = model.outlineColor;
+      ctx.lineWidth = Math.max(1, model.wallThickness * t.scale);
+      
+      ctx.fillRect(p.x, p.y, w, h);
+      ctx.strokeRect(p.x, p.y, w, h);
+
+      ctx.fillStyle = model.labelColor;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "600 16px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.fillText(room.name, p.x + w / 2, p.y + h / 2 - 10);
+
+      ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.fillStyle = "#6b7280";
+      ctx.fillText(`${room.width} × ${room.height}`, p.x + w / 2, p.y + h / 2 + 12);
+      ctx.restore();
+    }
+
+    function getFeatureSegment(room, side, offset, size) {
+      if (side === "top") return { x1: room.x + offset, y1: room.y, x2: room.x + offset + size, y2: room.y, side };
+      if (side === "bottom") return { x1: room.x + offset, y1: room.y + room.height, x2: room.x + offset + size, y2: room.y + room.height, side };
+      if (side === "left") return { x1: room.x, y1: room.y + offset, x2: room.x, y2: room.y + offset + size, side };
+      return { x1: room.x + room.width, y1: room.y + offset, x2: room.x + room.width, y2: room.y + offset + size, side };
+    }
+
+    function eraseWallPart(seg, roomColor, wallThicknessPx, t) {
+      const p1 = mapPoint(seg.x1, seg.y1, t), p2 = mapPoint(seg.x2, seg.y2, t);
+      ctx.save();
+      ctx.strokeStyle = roomColor;
+      ctx.lineWidth = wallThicknessPx + 2; // slightly larger to prevent artifacts
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+      ctx.restore();
+      return { p1, p2 };
+    }
+
+    function drawDoor(door, model, t) {
+      const room = findRoom(model, door.room);
+      if (!room) return;
+
+      const maxSize = (door.side === "top" || door.side === "bottom") ? room.width : room.height;
+      const size = clamp(door.size, 10, maxSize);
+      const offset = clamp(door.offset, 0, Math.max(0, maxSize - size));
+      const seg = getFeatureSegment(room, door.side, offset, size);
+      
+      const wallThicknessPx = Math.max(1, model.wallThickness * t.scale);
+      const { p1, p2 } = eraseWallPart(seg, room.color, wallThicknessPx, t);
+
+      ctx.save();
+      ctx.strokeStyle = "#6b7280";
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+
+      ctx.beginPath();
+      const radius = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      if (seg.side === "top") ctx.arc(p1.x, p1.y, radius, 0, Math.PI / 2);
+      else if (seg.side === "bottom") ctx.arc(p1.x, p1.y, radius, 0, -Math.PI / 2, true);
+      else if (seg.side === "left") ctx.arc(p1.x, p1.y, radius, Math.PI / 2, 0, true);
+      else ctx.arc(p1.x, p1.y, radius, Math.PI / 2, Math.PI);
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+
+    function drawWindow(win, model, t) {
+      const room = findRoom(model, win.room);
+      if (!room) return;
+
+      const maxSize = (win.side === "top" || win.side === "bottom") ? room.width : room.height;
+      const size = clamp(win.size, 10, maxSize);
+      const offset = clamp(win.offset, 0, Math.max(0, maxSize - size));
+      const seg = getFeatureSegment(room, win.side, offset, size);
+      
+      const wallThicknessPx = Math.max(1, model.wallThickness * t.scale);
+      const { p1, p2 } = eraseWallPart(seg, room.color, wallThicknessPx, t);
+
+      ctx.save();
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = Math.max(2, wallThicknessPx * 0.4);
+      
+      // Draw double line for window sill effect
+      const dx = (seg.side === 'left' || seg.side === 'right') ? wallThicknessPx * 0.3 : 0;
+      const dy = (seg.side === 'top' || seg.side === 'bottom') ? wallThicknessPx * 0.3 : 0;
+
+      ctx.beginPath();
+      ctx.moveTo(p1.x - dx, p1.y - dy);
+      ctx.lineTo(p2.x - dx, p2.y - dy);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(p1.x + dx, p1.y + dy);
+      ctx.lineTo(p2.x + dx, p2.y + dy);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function validateLayout(model) {
+      const messages = [];
+      const overlap = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+      for (const room of model.rooms) {
+        if (room.x < 0 || room.y < 0 || room.x + room.width > model.planWidth || room.y + room.height > model.planHeight) {
+          messages.push(`Room "${room.name}" touches outside boundaries.`);
+        }
+      }
+      for (let i = 0; i < model.rooms.length; i++) {
+        for (let j = i + 1; j < model.rooms.length; j++) {
+          if (overlap(model.rooms[i], model.rooms[j])) {
+            messages.push(`Rooms "${model.rooms[i].name}" and "${model.rooms[j].name}" overlap.`);
+          }
+        }
+      }
+      return messages;
+    }
+
+    function render() {
+      const model = parseLayout(inputText.value);
+      parsedOutput.textContent = JSON.stringify(model, null, 2);
+      
+      // Handle responsive scaling and high DPI screens
+      const cssSize = setupCanvas(model.planWidth + 80, model.planHeight + 80); // padding
+      const t = fitTransform(model.planWidth, model.planHeight, cssSize.width, cssSize.height, 40);
+
+      // Background
+      ctx.fillStyle = model.backgroundColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw everything
+      drawGrid(model, t);
+      for (const room of model.rooms) drawRoom(room, model, t);
+      for (const win of model.windows) drawWindow(win, model, t);
+      for (const door of model.doors) drawDoor(door, model, t);
+
+      // Outline
+      const a = mapPoint(0, 0, t), b = mapPoint(model.planWidth, model.planHeight, t);
+      ctx.save();
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      ctx.restore();
+
+      // Validation Output
+      const issues = validateLayout(model);
+      if (issues.length === 0) {
+        validationBox.className = "status-box ok-box";
+        validationBox.innerHTML = "✓ Layout is geometrically sound.";
+      } else {
+        validationBox.className = "status-box warning-box";
+        validationBox.innerHTML = "<b>⚠️ Layout warnings:</b><br>" + issues.map(x => "• " + x).join("<br>");
+      }
+    }
+
+    // Debounced input for live updating
+    let renderTimeout;
+    inputText.addEventListener('input', () => {
+      clearTimeout(renderTimeout);
+      renderTimeout = setTimeout(render, 150);
+    });
+
+    // Window resize handling
+    window.addEventListener('resize', () => {
+      clearTimeout(renderTimeout);
+      renderTimeout = setTimeout(render, 100);
+    });
+
+    function downloadPNG() {
+      const link = document.createElement("a");
+      link.download = "floor_plan.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }
+
+    document.getElementById("renderBtn").addEventListener("click", render);
+    document.getElementById("downloadBtn").addEventListener("click", downloadPNG);
+    
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      inputText.value = inputText.defaultValue;
+      render();
+    });
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
