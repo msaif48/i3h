@@ -289,7 +289,8 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
         }
     }
 
-    window.generateParametric = function() {
+    // --- SECURE GENERATION FUNCTION ---
+    window.generateParametric = async function() {
         document.getElementById("roomList").innerHTML = "";
         const A = +document.getElementById("paramA").value; const F = +document.getElementById("paramF").value;
         const N = +document.getElementById("paramN").value; const L = +document.getElementById("landLength").value || 20;
@@ -331,6 +332,27 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
             }
             window.buildingData.floors.push(doFloorBSP(floorRooms, false));
         }
+
+        // ==========================================
+        // THE SECURE BACKEND CONNECTION TEST
+        // ==========================================
+        console.log("Connecting to secure server... Please wait.");
+        try {
+            const response = await fetch('https://vercel-backend-d5tb.onrender.com/api/generate-3d', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(window.buildingData)
+            });
+
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+            const serverResponse = await response.json();
+            console.log("✅ SUCCESS! Message from Private Server:", serverResponse.message);
+
+        } catch (error) {
+            console.error("❌ Failed to connect to secure server:", error);
+        }
+        // ==========================================
 
         buildFloorTabs(); activeFloorIndex = 0; switchFloor(0);
     };
