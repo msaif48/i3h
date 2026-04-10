@@ -61,7 +61,6 @@
         
         .instruction { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.8); color: white; padding: 8px 16px; border-radius: 20px; font-size: 12px; pointer-events: none; z-index: 5;}
         
-        /* Sun Slider Styling */
         .slider-container { background: #fffbeb; padding: 10px; border-radius: 6px; border: 1px solid #fde68a; margin-bottom: 15px; }
         .slider-container label { display: flex; justify-content: space-between; color: #d97706; }
         input[type=range] { width: 100%; margin-top: 5px; accent-color: #f59e0b; }
@@ -73,7 +72,7 @@
 
 <div class="sidebar">
     <h2>Architect Pro</h2>
-    <div class="subtitle">v48 - Sun Simulation & Realism</div>
+    <div class="subtitle">v48 - Cloud Secured Engine</div>
     
     <div class="dashboard">
         <div class="dash-row"><span>Total Built: <b id="valBuilt">0 m²</b></span> <span>Max Footprint: <b id="valLand">0 m²</b></span></div>
@@ -109,7 +108,7 @@
             <div><label>Land Length (m)</label><input id="landLength" type="number" value="18" oninput="renderCanvas()" /></div>
             <div><label>Land Width (m)</label><input id="landWidth" type="number" value="12" oninput="renderCanvas()" /></div>
         </div>
-        <button class="btn-param" onclick="generateParametric()">🏢 1. Generate Building</button>
+        <button id="btnGenerate" class="btn-param" onclick="generateParametric()">🏢 1. Generate Building</button>
     </div>
     
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -151,7 +150,7 @@ window.buildingData = { floors: [], landL: 18, landW: 12, targetW: 0, targetH: 0
 let activeFloorIndex = 0;
 let current3DMode = null; 
 let scene, camera, renderer, controls;
-let globalSunLight, globalHemiLight; // Global lighting variables
+let globalSunLight, globalHemiLight;
 let generatedOpenings = { doors: [], windows: [], mainDoor: null }; 
 
 (() => {
@@ -161,7 +160,7 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
     const WALL_EXT = 0.3;  
     const WALL_INT = 0.15; 
     const SETBACKS = { front: 3, rear: 2, sides: 1.5 }; 
-    const EPSILON = 0.1; // FIX: Increased math tolerance to absolutely prevent false-positive collisions
+    const EPSILON = 0.1;
 
     const ZONES = {
         PUBLIC: { class: 'zone-public', color: '#f0fdf4', outline: '#10b981', order: 2 },
@@ -171,33 +170,26 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
     };
 
     const types = {
-        Staircase:      { zone: ZONES.CIRC, min: 2.0, icon: drawStairs },
-        Corridor:       { zone: ZONES.CIRC, min: 1.5, icon: null }, 
-        Hall:           { zone: ZONES.PUBLIC, min: 3.0, icon: drawSofa },
-        Dining:         { zone: ZONES.PUBLIC, min: 2.5, icon: drawTable },
-        "Sit-out":      { zone: ZONES.PUBLIC, min: 1.5, icon: null }, 
-        Kitchen:        { zone: ZONES.SEMI, min: 2.5, icon: drawKitchen },
-        "Common Bath":  { zone: ZONES.SEMI, min: 1.5, icon: drawBath }, 
-        "Car Porch":    { zone: ZONES.SEMI, min: 3.0, icon: drawCar }, 
-        Bedroom:        { zone: ZONES.PRIVATE, min: 3.0, icon: drawBed },
-        Pooja:          { zone: ZONES.PRIVATE, min: 1.5, icon: null }, 
-        "Attached Bath":{ zone: ZONES.PRIVATE, min: 1.5, icon: drawBath },
-        Balcony:        { zone: ZONES.PUBLIC, min: 1.5, icon: null }
+        Staircase:      { zone: ZONES.CIRC, icon: drawStairs },
+        Corridor:       { zone: ZONES.CIRC, icon: null }, 
+        Hall:           { zone: ZONES.PUBLIC, icon: drawSofa },
+        Dining:         { zone: ZONES.PUBLIC, icon: drawTable },
+        "Sit-out":      { zone: ZONES.PUBLIC, icon: null }, 
+        Kitchen:        { zone: ZONES.SEMI, icon: drawKitchen },
+        "Common Bath":  { zone: ZONES.SEMI, icon: drawBath }, 
+        "Car Porch":    { zone: ZONES.SEMI, icon: drawCar }, 
+        Bedroom:        { zone: ZONES.PRIVATE, icon: drawBed },
+        Pooja:          { zone: ZONES.PRIVATE, icon: null }, 
+        "Attached Bath":{ zone: ZONES.PRIVATE, icon: drawBath },
+        Balcony:        { zone: ZONES.PUBLIC, icon: null }
     };
 
     const validConnections = {
         'Hall': ['Dining', 'Kitchen', 'Corridor', 'Staircase', 'Balcony', 'Bedroom', 'Sit-out', 'Pooja'], 
         'Corridor': ['Hall', 'Bedroom', 'Common Bath', 'Staircase', 'Pooja'], 
-        'Dining': ['Hall', 'Kitchen'],
-        'Kitchen': ['Hall', 'Dining'],
-        'Bedroom': ['Hall', 'Corridor', 'Attached Bath', 'Balcony'],
-        'Attached Bath': ['Bedroom'],
-        'Common Bath': ['Hall', 'Corridor'],
-        'Staircase': ['Hall', 'Corridor', 'Car Porch'],
-        'Balcony': ['Hall', 'Bedroom'],
-        'Sit-out': ['Hall', 'Car Porch'],
-        'Car Porch': ['Sit-out', 'Staircase'],
-        'Pooja': ['Hall', 'Corridor']
+        'Dining': ['Hall', 'Kitchen'], 'Kitchen': ['Hall', 'Dining'], 'Bedroom': ['Hall', 'Corridor', 'Attached Bath', 'Balcony'],
+        'Attached Bath': ['Bedroom'], 'Common Bath': ['Hall', 'Corridor'], 'Staircase': ['Hall', 'Corridor', 'Car Porch'],
+        'Balcony': ['Hall', 'Bedroom'], 'Sit-out': ['Hall', 'Car Porch'], 'Car Porch': ['Sit-out', 'Staircase'], 'Pooja': ['Hall', 'Corridor']
     };
 
     function canConnect(typeA, typeB) {
@@ -206,158 +198,41 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
         return false;
     }
 
-    function getMinDim(rooms) {
-        return Math.min(...rooms.map(r => types[r.type]?.min || 2.0));
-    }
-
-    // --- BSP ENGINE ---
-    function bsp(x, y, w, h, rooms) {
-        if (!rooms || rooms.length === 0) return;
-        x = Math.round(x * 10) / 10; y = Math.round(y * 10) / 10;
-        w = Math.round(w * 10) / 10; h = Math.round(h * 10) / 10;
-
-        if (rooms.length === 1) { rooms[0].x = x; rooms[0].y = y; rooms[0].w = w; rooms[0].h = h; return; }
-        
-        let totalWeight = rooms.reduce((s,r)=>s+r.weight,0); let half = totalWeight / 2; let cur=0, idx=1;
-        for(let i=0; i<rooms.length-1; i++){ cur += rooms[i].weight; if(cur >= half) { idx = i+1; break; } }
-        
-        let listA = rooms.slice(0, idx); let listB = rooms.slice(idx);
-        let ratio = listA.reduce((s,r)=>s+r.weight,0) / totalWeight;
-
-        let minA = getMinDim(listA); let minB = getMinDim(listB);
-
-        if (w > h) { 
-            let splitW = Math.round((w * ratio) * 10) / 10;
-            if (splitW < minA) splitW = minA; if (w - splitW < minB) splitW = w - minB; if (splitW < minA) splitW = w / 2; 
-            let remainW = Math.round((w - splitW) * 10) / 10;
-            bsp(x, y, splitW, h, listA); bsp(Math.round((x + splitW)*10)/10, y, remainW, h, listB);
-        } else { 
-            let splitH = Math.round((h * ratio) * 10) / 10;
-            if (splitH < minA) splitH = minA; if (h - splitH < minB) splitH = h - minB; if (splitH < minA) splitH = h / 2;
-            let remainH = Math.round((h - splitH) * 10) / 10;
-            bsp(x, y, w, splitH, listA); bsp(x, Math.round((y + splitH)*10)/10, w, remainH, listB);
-        }
-    }
-
-    function doFloorBSP(roomsList, isShuffle = false) {
-        if (isShuffle) {
-            let mainRooms = roomsList.filter(r => r.type !== 'Staircase'); let stair = roomsList.find(r => r.type === 'Staircase');
-            mainRooms.sort(() => Math.random() - 0.5); roomsList = stair ? [stair, ...mainRooms] : mainRooms;
-        } else {
-            roomsList.sort((a, b) => types[a.type].zone.order - types[b.type].zone.order);
-        }
-
-        let finalRooms = [];
-        const targetW = window.buildingData.targetW; const targetH = window.buildingData.targetH;
-        const startX = SETBACKS.sides; const startY = SETBACKS.front;
-
-        let stair = roomsList.find(r => r.type === 'Staircase'); let otherRooms = roomsList.filter(r => r.type !== 'Staircase');
-
-        if (stair) {
-            let gfStair = window.buildingData.floors[0]?.find(r => r.type === 'Staircase');
-            let stairW = gfStair ? gfStair.w : Math.max(2.5, Math.round(targetW * 0.25 * 10)/10);
-            let stairH = gfStair ? gfStair.h : Math.max(3.5, Math.round(targetH * 0.3 * 10)/10);
-            
-            finalRooms.push({type: 'Staircase', x: startX, y: startY, w: stairW, h: stairH, id: 'stair'});
-            
-            let areaA = (targetW - stairW) * stairH; let areaB = targetW * (targetH - stairH); let ratioA = areaA / (areaA + areaB);
-            let targetAWeight = otherRooms.reduce((s, r)=>s+r.weight, 0) * ratioA; let cur = 0, idx = 1;
-            for(let i=0; i<otherRooms.length; i++) { cur += otherRooms[i].weight; if(cur >= targetAWeight && i < otherRooms.length - 1) { idx = i + 1; break; } }
-            
-            let listA = otherRooms.slice(0, idx); let listB = otherRooms.slice(idx);
-            if (listA.length === 0 && listB.length > 1) listA.push(listB.shift()); if (listB.length === 0 && listA.length > 1) listB.push(listA.pop());
-            
-            let w1 = Math.round((targetW - stairW)*10)/10; let h2 = Math.round((targetH - stairH)*10)/10;
-            bsp(Math.round((startX + stairW)*10)/10, startY, w1, stairH, listA);
-            bsp(startX, Math.round((startY + stairH)*10)/10, targetW, h2, listB);
-            
-            [...listA, ...listB].forEach((r, i) => mapRoomData(r, finalRooms, i));
-        } else {
-            bsp(startX, startY, targetW, targetH, otherRooms);
-            otherRooms.forEach((r, i) => mapRoomData(r, finalRooms, i));
-        }
-        return finalRooms;
-    }
-
-    function mapRoomData(r, finalRooms, index) {
-        let baseId = `room_${index}_${Math.random().toString(36).substr(2, 5)}`;
-        finalRooms.push({type: r.type, x: r.x, y: r.y, w: r.w, h: r.h, id: baseId});
-        if (r.hasBath) {
-            let bw = Math.round(Math.max(1.5, Math.min(2.5, r.w * 0.4)) * 10)/10; let bh = Math.round(Math.max(1.5, Math.min(2.5, r.h * 0.4)) * 10)/10;
-            let bx = Math.round((r.x + r.w - bw - WALL_EXT) * 10)/10; let by = Math.round((r.y + WALL_EXT) * 10)/10;
-            finalRooms.push({type: 'Attached Bath', x: bx, y: by, w: bw, h: bh, id: `${baseId}_bath`});
-        }
-    }
-
-    // --- SECURE GENERATION FUNCTION ---
+    // ==========================================
+    // ☁️ CLOUD API LOGIC (No math happens here!)
+    // ==========================================
     window.generateParametric = async function() {
+        const btn = document.getElementById("btnGenerate");
+        btn.innerText = "⏳ Generating in Cloud...";
         document.getElementById("roomList").innerHTML = "";
-        const A = +document.getElementById("paramA").value; const F = +document.getElementById("paramF").value;
-        const N = +document.getElementById("paramN").value; const L = +document.getElementById("landLength").value || 20;
-        const W = +document.getElementById("landWidth").value || 15;
-
-        window.buildingData.floors = [];
-        let maxW = L - SETBACKS.sides * 2; let maxH = W - SETBACKS.front - SETBACKS.rear;
-        let maxBuildableArea = (maxW > 0 && maxH > 0) ? (maxW * maxH) : 0;
-        let safeA = Math.min(A, maxBuildableArea); 
         
-        let tW = Math.round(Math.sqrt(safeA * 1.2) * 10) / 10; let tH = Math.round((safeA / tW) * 10) / 10;
-        if (tW > maxW) { tW = maxW; tH = Math.round((safeA / tW) * 10) / 10; }
-        if (tH > maxH) { tH = maxH; tW = Math.round((safeA / tH) * 10) / 10; }
-        if (tW > maxW) tW = maxW; if (tH > maxH) tH = maxH;
-        
-        window.buildingData.targetW = tW; window.buildingData.targetH = tH;
-        window.buildingData.landL = L; window.buildingData.landW = W;
+        const payload = {
+            A: +document.getElementById("paramA").value,
+            F: +document.getElementById("paramF").value,
+            N: +document.getElementById("paramN").value,
+            L: +document.getElementById("landLength").value || 20,
+            W: +document.getElementById("landWidth").value || 15
+        };
 
-        let bedsRem = N;
-        for (let f = 0; f < F; f++) {
-            let floorRooms = [];
-            if (F > 1) floorRooms.push({type: 'Staircase', weight: 10});
-
-            if (f === 0) {
-                floorRooms.push({type: 'Car Porch', weight: 15}, {type: 'Sit-out', weight: 5}, {type: 'Hall', weight: 35}, {type: 'Dining', weight: 15}, {type: 'Kitchen', weight: 15}, {type: 'Common Bath', weight: 5});
-                if (N >= 3) floorRooms.push({type: 'Pooja', weight: 5}); 
-                if (F === 1 && N >= 2) floorRooms.push({type: 'Corridor', weight: 10});
-
-                if (F === 1) { for(let i=0; i<N; i++) floorRooms.push({type: 'Bedroom', weight: 20, hasBath: i < Math.ceil(N/2)}); bedsRem = 0; } 
-                else if (N >= 3) { floorRooms.push({type: 'Bedroom', weight: 20, hasBath: false}); bedsRem--; }
-            } else {
-                let bCount = Math.min(bedsRem, Math.ceil(bedsRem / (F - f)));
-                if (bCount >= 2) floorRooms.push({type: 'Corridor', weight: 15}); 
-                
-                for(let i=0; i<bCount; i++) floorRooms.push({type: 'Bedroom', weight: 30, hasBath: (N - bedsRem + i) < Math.ceil(N/2)});
-                bedsRem -= bCount;
-                if (f === F - 1) floorRooms.push({type: 'Balcony', weight: 15});
-                else floorRooms.push({type: 'Hall', weight: 20}); 
-            }
-            window.buildingData.floors.push(doFloorBSP(floorRooms, false));
-        }
-
-        // ==========================================
-        // THE SECURE BACKEND CONNECTION TEST
-        // ==========================================
-        console.log("Connecting to secure server... Please wait.");
         try {
-            const response = await fetch('https://vercel-backend-d5tb.onrender.com/api/generate-3d', {
+            const response = await fetch('https://vercel-backend-d5tb.onrender.com/api/generate-building', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(window.buildingData)
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) throw new Error(`Server error: ${response.status}`);
-
-            const serverResponse = await response.json();
-            console.log("✅ SUCCESS! Message from Private Server:", serverResponse.message);
-
+            window.buildingData = await response.json();
+            
+            buildFloorTabs(); activeFloorIndex = 0; switchFloor(0);
+            btn.innerText = "🏢 1. Generate Building";
         } catch (error) {
-            console.error("❌ Failed to connect to secure server:", error);
+            console.error("❌ Cloud API Error:", error);
+            btn.innerText = "⚠️ Server Waking Up... Try Again";
         }
-        // ==========================================
-
-        buildFloorTabs(); activeFloorIndex = 0; switchFloor(0);
     };
 
-    window.autoPackCurrentFloor = function() {
+    window.autoPackCurrentFloor = async function() {
         if (!window.buildingData.floors[activeFloorIndex]) return;
         const els = [...document.querySelectorAll(".room-item")];
         let roomsToShuffle = [];
@@ -373,9 +248,26 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
                 roomsToShuffle.push({ type: type, weight: varWeight, hasBath: type === 'Bedroom' && els.some(o => o.querySelector("select").value === 'Attached Bath' && isInside(o, el)) });
             }
         });
-        window.buildingData.floors[activeFloorIndex] = doFloorBSP(roomsToShuffle, true);
-        loadFloorToDOM(activeFloorIndex); renderCanvas();
+
+        let gfStair = window.buildingData.floors[0]?.find(r => r.type === 'Staircase');
+
+        try {
+            const response = await fetch('https://vercel-backend-d5tb.onrender.com/api/pack-floor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    roomsToShuffle: roomsToShuffle,
+                    targetW: window.buildingData.targetW,
+                    targetH: window.buildingData.targetH,
+                    gfStair: gfStair
+                })
+            });
+            window.buildingData.floors[activeFloorIndex] = await response.json();
+            loadFloorToDOM(activeFloorIndex); renderCanvas();
+        } catch (e) { console.error("Cloud pack error:", e); }
     }
+    // ==========================================
+
 
     // --- UI HELPERS ---
     function buildFloorTabs() {
@@ -426,7 +318,6 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
     window.addRoomManual = function() { window.buildingData.floors[activeFloorIndex].push({type: 'Bedroom', w:4, h:4, x:SETBACKS.sides, y:SETBACKS.front, id:`man_${Math.random()}`}); loadFloorToDOM(activeFloorIndex); renderCanvas(); }
     window.updateZone = function(selectEl) { const type = selectEl.value; selectEl.parentElement.parentElement.className = `room-item ${types[type].zone.class}`; }
     
-    // FIX: Increased collision tolerance to 0.15 to prevent micro-overlap bugs
     function isOverlap(a, b) { const tol = 0.15; return !(a.x + a.w <= b.x + tol || a.x >= b.x + b.w - tol || a.y + a.h <= b.y + tol || a.y >= b.y + b.h - tol); }
 
     function calculateOpenings(rooms, L, W, activeFloor) {
@@ -686,7 +577,6 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
         container.appendChild(renderer.domElement);
         controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = 0.05; controls.maxPolarAngle = Math.PI / 2 - 0.01; 
         
-        // Dynamic Lighting System
         globalHemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5); 
         scene.add(globalHemiLight);
         globalSunLight = new THREE.DirectionalLight(0xffffff, 1.0); 
@@ -696,7 +586,7 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
         globalSunLight.shadow.bias = -0.0005;
         scene.add(globalSunLight);
 
-        updateSunlight(); // Set initial sun position
+        updateSunlight();
 
         window.addEventListener('resize', () => { if(current3DMode && container.clientWidth > 0) { camera.aspect = container.clientWidth / container.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(container.clientWidth, container.clientHeight); } });
         animate3D();
@@ -711,24 +601,22 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
 
         if (!globalSunLight) return;
 
-        // Map time (6 to 20) to an angle (0 to PI)
         const angle = ((time - 6) / 14) * Math.PI;
         const radius = 60;
         globalSunLight.position.x = Math.cos(angle) * radius;
         globalSunLight.position.y = Math.sin(angle) * radius;
         globalSunLight.position.z = 15; 
 
-        // Adjust color and intensity based on time
         if (time < 8 || time > 17.5) {
-            globalSunLight.color.setHex(0xffa055); // Sunrise/Sunset orange
+            globalSunLight.color.setHex(0xffa055); 
             globalSunLight.intensity = 0.4;
             globalHemiLight.intensity = 0.2;
-            scene.background = new THREE.Color(0x1e293b); // Night sky
+            scene.background = new THREE.Color(0x1e293b); 
         } else {
-            globalSunLight.color.setHex(0xffffee); // Midday white
+            globalSunLight.color.setHex(0xffffee); 
             globalSunLight.intensity = 1.0;
             globalHemiLight.intensity = 0.5;
-            scene.background = new THREE.Color(0xe0f2fe); // Day sky
+            scene.background = new THREE.Color(0xe0f2fe); 
         }
     };
 
@@ -771,7 +659,6 @@ let generatedOpenings = { doors: [], windows: [], mainDoor: null };
                 const floor = new THREE.Mesh(new THREE.PlaneGeometry(r.w, r.h), new THREE.MeshStandardMaterial({ color: zoneColor, roughness: 0.6 }));
                 floor.rotation.x = -Math.PI / 2; floor.position.set(cx, floorYOffset + 0.01, cz); floor.receiveShadow = true; houseGroup.add(floor);
 
-                // Add Interior Procedural Lights
                 if ((mode === 'floor' || mode === 'building') && (r.type === 'Hall' || r.type === 'Bedroom' || r.type === 'Dining')) {
                     const roomLight = new THREE.PointLight(0xfff0dd, 0.4, 10);
                     roomLight.position.set(cx, floorYOffset + wallHeight - 0.5, cz);
